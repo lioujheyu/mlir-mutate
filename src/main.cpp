@@ -1,5 +1,8 @@
 #include "mlir/IR/Dialect.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/Module.h"
+#include "mlir/IR/Function.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/InitAllPasses.h"
 #include "mlir/Pass/Pass.h"
@@ -21,17 +24,50 @@ class Cut : public PassWrapper<Cut, OperationPass<ModuleOp>> {
   void runOnOperation() override {
     // Get the current operation being operated on.
     ModuleOp module = getOperation();
-    llvm::errs() << module.getName();
+    for (FuncOp f : module.getOps<FuncOp>()) {
+      llvm::errs() << "Function: " << f.getName() << "\n";
+      for (auto &op: f.getCallableRegion()->getOps()) {
+        op.walk([](Operation *nestedOp) {
+          llvm::errs() << nestedOp->getName() << ":" << nestedOp->getLoc() << "\n";
+        });
+        if (op.use_empty()) {
+          op.erase();
+          break;
+        }
+      }
+    }
   }
 };
+
+class Name : public PassWrapper<Name, OperationPass<ModuleOp>> {
+  void runOnOperation() override {
+    ModuleOp module = getOperation();
+    int cnt = 0;
+    std::string uid;
+    for (FuncOp f : module.getOps<FuncOp>()) {
+      for (auto &op: f.getCallableRegion()->getOps()) {
+        uid = "U" + std::to_string(cnt);
+        cnt++;
+        llvm::errs() << op.getName() << "\n";
+        op.setAttr("UID", StringAttr::get(uid, op.getContext()));
+      }
+    }
+  }
+};
+
 }
 
 std::unique_ptr<Pass> createCutPass() {
   return std::make_unique<Cut>();
 }
-
-static PassRegistration<Cut> pass(
+std::unique_ptr<Pass> createNamePass() {
+  return std::make_unique<Name>();
+}
+static PassRegistration<Cut> cutpass(
     "cut", "delete an operation");
+static PassRegistration<Name> namepass(
+    "name", "delete an operation");
+
 
 int main(int argc, char **argv) {
   llvm::cl::OptionCategory MlirMutateOptions(
@@ -54,6 +90,11 @@ int main(int argc, char **argv) {
     "c", llvm::cl::desc("delete an operation"),
     llvm::cl::cat(MlirMutateOptions)
   );
+  llvm::cl::opt<std::string> nameOp(
+    "n", llvm::cl::desc("name all operation with unique ID"),
+    llvm::cl::cat(MlirMutateOptions)
+  );
+
   llvm::cl::HideUnrelatedOptions(MlirMutateOptions);
   llvm::cl::ParseCommandLineOptions(
     argc, argv,
@@ -63,7 +104,7 @@ int main(int argc, char **argv) {
   mlir::registerAllDialects();
 
   mlir::MLIRContext context;
-  //context.allowUnregisteredDialects();
+  context.allowUnregisteredDialects();
   mlir::OwningModuleRef module;
   mlir::PassManager pm(&context);
 
@@ -86,9 +127,16 @@ int main(int argc, char **argv) {
     return -1;
   }
 
-  if (!cutOp.empty()) {
+  if (!nameOp.empty()) {
+    pm.addPass(createNamePass());
+  }
+  else if (!cutOp.empty()) {
     pm.addPass(createCutPass());
   }
+
+  pm.run(module.get());
+
+  module.get().dump();
 
   return 0;
 }
