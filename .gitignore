@@ -33,4 +33,5 @@
 
 #build folder
 build/*
+build_llvm_project/*
 .vscode/
