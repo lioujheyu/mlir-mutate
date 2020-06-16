@@ -11,12 +11,12 @@ set(LIBS
     MLIRLLVMIR
     MLIRParser
     MLIRPass
-    MLIRSideEffects
+    MLIRSideEffectInterfaces
     MLIRSupport
     MLIRTargetLLVMIR
     MLIRTransforms
 )
-add_llvm_executable(mlir-mutate main.cpp)
+add_llvm_executable(mlir-mutate main.cpp mutate.cpp)
 
 llvm_update_compile_flags(mlir-mutate)
 target_link_libraries(mlir-mutate PRIVATE ${LIBS})

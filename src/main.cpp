@@ -1,11 +1,6 @@
-#include "mlir/IR/Dialect.h"
-#include "mlir/IR/Builders.h"
-#include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/Module.h"
-#include "mlir/IR/Function.h"
-#include "mlir/InitAllDialects.h"
-#include "mlir/InitAllPasses.h"
-#include "mlir/Pass/Pass.h"
+#include <stdio.h>
+#include <vector>
+
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Parser.h"
 #include "mlir/Support/FileUtilities.h"
@@ -15,59 +10,20 @@
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
 
-#include "tfrt/basic_kernel/basic_kernels.h"
+#include "mutate.h"
 
 using namespace mlir;
 
-namespace{
-class Cut : public PassWrapper<Cut, OperationPass<ModuleOp>> {
-  void runOnOperation() override {
-    // Get the current operation being operated on.
-    ModuleOp module = getOperation();
-    for (FuncOp f : module.getOps<FuncOp>()) {
-      llvm::errs() << "Function: " << f.getName() << "\n";
-      for (auto &op: f.getCallableRegion()->getOps()) {
-        op.walk([](Operation *nestedOp) {
-          llvm::errs() << nestedOp->getName() << ":" << nestedOp->getLoc() << "\n";
-        });
-        if (op.use_empty()) {
-          op.erase();
-          break;
-        }
-      }
-    }
-  }
-};
-
-class Name : public PassWrapper<Name, OperationPass<ModuleOp>> {
-  void runOnOperation() override {
-    ModuleOp module = getOperation();
-    int cnt = 0;
-    std::string uid;
-    for (FuncOp f : module.getOps<FuncOp>()) {
-      for (auto &op: f.getCallableRegion()->getOps()) {
-        uid = "U" + std::to_string(cnt);
-        cnt++;
-        llvm::errs() << op.getName() << "\n";
-        op.setAttr("UID", StringAttr::get(uid, op.getContext()));
-      }
-    }
-  }
-};
-
-}
-
-std::unique_ptr<Pass> createCutPass() {
-  return std::make_unique<Cut>();
+std::unique_ptr<Pass> createCutPass(std::string op1) {
+  return std::make_unique<mutate::Cut>(op1);
 }
 std::unique_ptr<Pass> createNamePass() {
-  return std::make_unique<Name>();
+  return std::make_unique<mutate::Name>();
 }
-static PassRegistration<Cut> cutpass(
+static PassRegistration<mutate::Cut> cutpass(
     "cut", "delete an operation");
-static PassRegistration<Name> namepass(
+static PassRegistration<mutate::Name> namepass(
     "name", "delete an operation");
-
 
 int main(int argc, char **argv) {
   llvm::cl::OptionCategory MlirMutateOptions(
@@ -80,17 +36,17 @@ int main(int argc, char **argv) {
     llvm::cl::init("-"),
     llvm::cl::cat(MlirMutateOptions)
   );
-  // llvm::cl::opt<std::string> outputFilename(
-  //   "o", llvm::cl::desc("Output filename"),
-  //   llvm::cl::value_desc("filename"), 
-  //   llvm::cl::init("-"),
-  //   llvm::cl::cat(MlirMutateOptions)
-  // );
+  llvm::cl::opt<std::string> outputFilename(
+    "o", llvm::cl::desc("Output filename"),
+    llvm::cl::value_desc("filename"), 
+    llvm::cl::init("-"),
+    llvm::cl::cat(MlirMutateOptions)
+  );
   llvm::cl::opt<std::string> cutOp(
     "c", llvm::cl::desc("delete an operation"),
     llvm::cl::cat(MlirMutateOptions)
   );
-  llvm::cl::opt<std::string> nameOp(
+  llvm::cl::opt<bool> nameOp(
     "n", llvm::cl::desc("name all operation with unique ID"),
     llvm::cl::cat(MlirMutateOptions)
   );
@@ -106,7 +62,7 @@ int main(int argc, char **argv) {
   mlir::MLIRContext context;
   context.allowUnregisteredDialects();
   mlir::OwningModuleRef module;
-  mlir::PassManager pm(&context);
+  mlir::PassManager pm(&context, false);
 
   // Handle '.mlir' input to the ONNX MLIR frontend.
   // The mlir format indicates that one or more of the supported
@@ -127,16 +83,22 @@ int main(int argc, char **argv) {
     return -1;
   }
 
-  if (!nameOp.empty()) {
+  if (nameOp)
     pm.addPass(createNamePass());
-  }
-  else if (!cutOp.empty()) {
-    pm.addPass(createCutPass());
+  else {
+    if (!cutOp.empty())
+      pm.addPass(createCutPass(cutOp));
   }
 
   pm.run(module.get());
 
-  module.get().dump();
-
+  if (!outputFilename.empty()) {
+    freopen(outputFilename.c_str(), "w", stderr);
+    module.get().dump();
+    fclose(stderr);
+  }
+  else
+    module.get().dump();
+  
   return 0;
 }
