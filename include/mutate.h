@@ -1,11 +1,17 @@
 #ifndef MUTATE_H
 #define MUTATE_H
 
+#include <random>
+#include <vector>
+
+#include "llvm/ADT/SmallString.h"
 #include "mlir/IR/Dialect.h"
+#include "mlir/IR/Dominance.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Module.h"
 #include "mlir/IR/Function.h"
+#include "mlir/IR/Types.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/InitAllPasses.h"
 #include "mlir/Pass/Pass.h"
@@ -15,7 +21,19 @@
 using namespace mlir;
 
 namespace mutate{
-std::vector<mlir::Operation*> traverseNestedOp(mlir::Operation* startop);
+/***
+ * Because the god damn lifetime of OpResult only last in the scope of Operation.getResult()
+ * , the implementation here actually uses "operation + result index" in the std::pair instead 
+ * of value as the reference. However, since the function argument can also be the desired value,
+ * I have to use void pointer to store operation and blockargument passing through the function
+ * and latter on casting to the the correct type based on the UID string. 
+ * */
+void collectValueBeforeOp(FuncOp &F, Operation* boundary, Value refV,
+                         std::vector<std::pair<void*, std::string>> &resultVec);
+std::pair<void*, std::string> randValueBeforeOp(FuncOp &F, Operation* boundary, Value refV);
+void replaceAllUsesWithReport(Value from, std::pair<void*, std::string> &metaTo);
+std::vector<mlir::Operation*> traverseNestedOp(mlir::Operation* startop, bool insertStartOp=false);
+Operation* walkExact(std::string op_desc, std::string &UID, ModuleOp &m);
 
 class Cut : public PassWrapper<Cut, OperationPass<ModuleOp>> {
 public:

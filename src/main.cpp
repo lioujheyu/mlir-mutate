@@ -39,7 +39,7 @@ int main(int argc, char **argv) {
   llvm::cl::opt<std::string> outputFilename(
     "o", llvm::cl::desc("Output filename"),
     llvm::cl::value_desc("filename"), 
-    llvm::cl::init("-"),
+    llvm::cl::init(""),
     llvm::cl::cat(MlirMutateOptions)
   );
   llvm::cl::opt<std::string> cutOp(
