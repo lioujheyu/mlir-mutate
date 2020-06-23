@@ -124,6 +124,16 @@ Operation* mutate::walkExact(std::string op_desc, std::string &UID, ModuleOp &m)
     return nullptr;
 }
 
+Operation* mutate::insertNOP(Operation *refOp) {
+    assert(refOp->getParentRegion());
+
+    OpBuilder builder(refOp->getContext());
+    builder.setInsertionPoint(refOp);
+    auto nop = builder.create<mlir::ConstantIntOp>(builder.getUnknownLoc(), 0, 32);
+    nop.getOperation()->setUID(refOp->getUID() + ".d");
+    return nop.getOperation();
+}
+
 void mutate::Cut::runOnOperation() {
     // Get the current operation being operated on.
     ModuleOp module = getOperation();
@@ -149,8 +159,14 @@ void mutate::Cut::runOnOperation() {
             replaceAllUsesWithReport(v, metaV);
         }
     }
+    insertNOP(op);
     op->erase();
     llvm::errs() << "cut " << op1 << "\n";
+}
+
+void mutate::Insert::runOnOperation() {
+    // Get the current operation being operated on.
+    ModuleOp module = getOperation();
 }
 
 void mutate::Name::runOnOperation() {

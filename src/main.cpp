@@ -17,13 +17,18 @@ using namespace mlir;
 std::unique_ptr<Pass> createCutPass(std::string op1) {
   return std::make_unique<mutate::Cut>(op1);
 }
+std::unique_ptr<Pass> createInsertPass(std::string src, std::string dst) {
+  return std::make_unique<mutate::Insert>(src, dst);
+}
 std::unique_ptr<Pass> createNamePass() {
   return std::make_unique<mutate::Name>();
 }
 static PassRegistration<mutate::Cut> cutpass(
     "cut", "delete an operation");
+static PassRegistration<mutate::Insert> insertpass(
+    "insert", "Copy an operation to somewhere else");
 static PassRegistration<mutate::Name> namepass(
-    "name", "delete an operation");
+    "name", "Name each operation with a unique ID");
 
 int main(int argc, char **argv) {
   llvm::cl::OptionCategory MlirMutateOptions(
@@ -43,11 +48,18 @@ int main(int argc, char **argv) {
     llvm::cl::cat(MlirMutateOptions)
   );
   llvm::cl::opt<std::string> cutOp(
-    "c", llvm::cl::desc("delete an operation"),
+    "c", llvm::cl::desc("Delete an operation"),
+    llvm::cl::value_desc("OpUID"),
     llvm::cl::cat(MlirMutateOptions)
   );
+  llvm::cl::list<std::string> InsertOp(
+    "i", llvm::cl::desc("Copy an operation to somewhere else"),
+    llvm::cl::value_desc("srcOpUID,dstOpUID"),
+    llvm::cl::cat(MlirMutateOptions),
+    llvm::cl::CommaSeparated
+  );
   llvm::cl::opt<bool> nameOp(
-    "n", llvm::cl::desc("name all operation with unique ID"),
+    "n", llvm::cl::desc("Name each operation with a unique ID"),
     llvm::cl::cat(MlirMutateOptions)
   );
 
@@ -88,12 +100,19 @@ int main(int argc, char **argv) {
   else {
     if (!cutOp.empty())
       pm.addPass(createCutPass(cutOp));
+    if (!InsertOp.empty()) {
+      if (InsertOp.size() != 2) {
+        llvm::errs() << "Insertion operation needs 2 arguments\n";
+        return -1;
+      }
+      pm.addPass(createInsertPass(InsertOp[0], InsertOp[1]));
+    }
   }
 
   pm.run(module.get());
 
   if (!outputFilename.empty()) {
-    freopen(outputFilename.c_str(), "w", stderr);
+    freopen(outputFilename.c_str(), "w", stdout);
     module.get().dump();
     fclose(stderr);
   }
