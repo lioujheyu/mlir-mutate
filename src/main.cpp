@@ -17,8 +17,8 @@ using namespace mlir;
 std::unique_ptr<Pass> createCutPass(std::string op1) {
   return std::make_unique<mutate::Cut>(op1);
 }
-std::unique_ptr<Pass> createInsertPass(std::string src, std::string dst) {
-  return std::make_unique<mutate::Insert>(src, dst);
+std::unique_ptr<Pass> createInsertPass(std::string dst, std::string src) {
+  return std::make_unique<mutate::Insert>(dst, src);
 }
 std::unique_ptr<Pass> createNamePass() {
   return std::make_unique<mutate::Name>();
@@ -54,7 +54,7 @@ int main(int argc, char **argv) {
   );
   llvm::cl::list<std::string> InsertOp(
     "i", llvm::cl::desc("Copy an operation to somewhere else"),
-    llvm::cl::value_desc("srcOpUID,dstOpUID"),
+    llvm::cl::value_desc("dstOpUID,srcOpUID"),
     llvm::cl::cat(MlirMutateOptions),
     llvm::cl::CommaSeparated
   );
@@ -74,7 +74,7 @@ int main(int argc, char **argv) {
   mlir::MLIRContext context;
   context.allowUnregisteredDialects();
   mlir::OwningModuleRef module;
-  mlir::PassManager pm(&context, false);
+  mlir::PassManager pm(&context, true);
 
   // Handle '.mlir' input to the ONNX MLIR frontend.
   // The mlir format indicates that one or more of the supported
@@ -109,10 +109,11 @@ int main(int argc, char **argv) {
     }
   }
 
-  pm.run(module.get());
+  if (failed(pm.run(*module)))
+    return -1;
 
   if (!outputFilename.empty()) {
-    freopen(outputFilename.c_str(), "w", stdout);
+    freopen(outputFilename.c_str(), "w", stderr);
     module.get().dump();
     fclose(stderr);
   }

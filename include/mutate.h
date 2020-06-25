@@ -21,34 +21,35 @@
 using namespace mlir;
 
 namespace mutate{
-/***
- * Because the god damn lifetime of OpResult only last in the scope of Operation.getResult()
- * , the implementation here actually uses "operation + result index" in the std::pair instead 
- * of value as the reference. However, since the function argument can also be the desired value,
- * I have to use void pointer to store operation and blockargument passing through the function
- * and later on casting to the the correct type based on the UID string. 
- * */
 void collectValueBeforeOp(FuncOp &F, Operation* boundary, Value refV,
-                         std::vector<std::pair<void*, std::string>> &resultVec);
-std::pair<void*, std::string> randValueBeforeOp(FuncOp &F, Operation* boundary, Value refV);
-void replaceAllUsesWithReport(Value from, std::pair<void*, std::string> &metaTo);
-std::vector<mlir::Operation*> traverseNestedOp(mlir::Operation* startop, bool insertStartOp=false);
-Operation* walkExact(std::string op_desc, std::string &UID, ModuleOp &m);
+                         std::vector<std::pair<Operation*, std::string>> &resultVec);
+std::pair<Operation*, std::string> randValueBeforeOp(FuncOp &F, Operation* boundary, Value refV);
+bool replaceAllUsesWithReport(Value from, std::pair<Operation*, std::string> &metaTo);
+std::vector<mlir::Operation*> traverseNestedOp(mlir::Operation* startop, 
+                                               bool insertStartOp=false,
+                                               bool excludeIsolatedFromAbove=false);
+void updateUID(Operation* op, std::string mode);
+bool replaceUnfulfillOperands(Operation *op);
+void useResult(Operation *op);
+
+Operation* walkCollect(std::string opDesc, std::string &UID, ModuleOp &m);
+Operation* walkExact(std::string opDesc, std::string &UID, ModuleOp &m);
+Operation* walkPosition(std::string opDesc, std::string &UID, ModuleOp &m);
 
 /**
- * Insert an NOP (using mlir::std::ConstantOp) after refOp
+ * Insert an NOP (using mlir::ConstantOp) before refOp is removed
  **/
 Operation* insertNOP(Operation *refOp);
 
 class Insert : public PassWrapper<Insert, OperationPass<ModuleOp>> {
 public:
   Insert() {}
-  Insert(std::string src, std::string dst) : srcOp(src), dstOp(dst){}
+  Insert(std::string dst, std::string src) : dstDesc(dst), srcDesc(src){}
   void runOnOperation() override;
   
 private:
-  std::string srcOp;
-  std::string dstOp;
+  std::string srcDesc;
+  std::string dstDesc;
 };
 
 class Cut : public PassWrapper<Cut, OperationPass<ModuleOp>> {
