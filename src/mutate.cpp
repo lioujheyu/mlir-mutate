@@ -351,6 +351,15 @@ void mutate::Insert::runOnOperation() {
         return;
     }
 
+    // Rename the symbol name if it exist
+    // TODO: implement a better renaming scheme
+    auto nameAttr = inserted->getAttrOfType<StringAttr>(mlir::SymbolTable::getSymbolAttrName());
+    if (nameAttr != nullptr) {
+        std::string newAttrStr = nameAttr.getValue().str() + "_" + inserted->getUID();
+        inserted->setAttr(mlir::SymbolTable::getSymbolAttrName(), 
+                          StringAttr::get(StringRef(newAttrStr), inserted->getContext()) );
+    }
+
     if (!(srcOp->use_empty()))
         mutate::useResult(inserted);
 
