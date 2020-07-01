@@ -76,9 +76,7 @@ int main(int argc, char **argv) {
   mlir::OwningModuleRef module;
   mlir::PassManager pm(&context, true);
 
-  // Handle '.mlir' input to the ONNX MLIR frontend.
-  // The mlir format indicates that one or more of the supported
-  // representations are used in the file.
+  // Handle '.mlir' input 
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
       llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
   if (std::error_code EC = fileOrErr.getError()) {
@@ -114,11 +112,11 @@ int main(int argc, char **argv) {
 
   if (!outputFilename.empty()) {
     freopen(outputFilename.c_str(), "w", stderr);
-    module.get().dump();
+    module.get().print(llvm::errs(), OpPrintingFlags().enableUID());
     fclose(stderr);
   }
   else
-    module.get().dump();
+    module.get().print(llvm::errs(), OpPrintingFlags().enableUID());
   
   return 0;
 }
