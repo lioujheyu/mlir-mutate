@@ -25,6 +25,7 @@ void collectValueBeforeOp(FuncOp &F, Operation* boundary, Value refV,
                          std::vector<std::pair<Operation*, std::string>> &resultVec);
 std::pair<Operation*, std::string> randValueBeforeOp(FuncOp &F, Operation* boundary, Value refV);
 bool replaceAllUsesWithReport(Value from, std::pair<Operation*, std::string> &metaTo);
+Operation* getLocalConstantOp(Operation *op, Value refV);
 std::vector<mlir::Operation*> traverseNestedOp(mlir::Operation* startop, 
                                                bool insertStartOp=false,
                                                bool excludeIsolatedFromAbove=false);

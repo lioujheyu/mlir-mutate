@@ -55,6 +55,9 @@ void mutate::collectValueBeforeOp(FuncOp &f, Operation* boundary, Value refV,
 
 std::pair<Operation*, std::string> mutate::randValueBeforeOp(FuncOp &F, Operation* boundary, Value refV) {
     std::vector<std::pair<Operation*, std::string>> resultVec;
+    Operation *cop = getLocalConstantOp(boundary, refV);
+    if (cop != nullptr)
+        resultVec.push_back(std::make_pair(cop, "0"));
     collectValueBeforeOp(F, boundary, refV, resultVec);
     // has constant to participate in drawing
     // resultVec.push_back(std::make_pair(getConstantValue(refOP->getType()), StringRef("C1")));
@@ -97,6 +100,37 @@ bool mutate::replaceAllUsesWithReport(Value from, std::pair<Operation*, std::str
         useList.pop_back();
     }
     return true;
+}
+
+Operation* mutate::getLocalConstantOp(Operation *op, Value refV) {
+    std::string typeStr;
+    Type t = refV.getType();
+    if (!t.isIntOrFloat()) // TODO: create the constant in complex types, like vector
+        return nullptr;
+
+    Operation *parentOp = op->getParentWithTrait<OpTrait::IsIsolatedFromAbove>();
+    for (Operation *_op: traverseNestedOp(parentOp)) {
+        if (_op->getUID().find("C1") != std::string::npos) {
+            if (_op->getResult(0).getType() == refV.getType())
+                return _op;
+        }
+    }
+
+    OpBuilder builder(parentOp->getRegion(0));
+    Operation *cop;
+    
+    unsigned width = t.getIntOrFloatBitWidth();
+    if (t.isInteger(width)) {
+        typeStr = "C1i" + std::to_string(width);
+        cop = builder.create<mlir::ConstantIntOp>(builder.getUnknownLoc(), 1, t);
+    }
+    else {
+        typeStr = "C1f" + std::to_string(width);
+        cop = builder.create<mlir::ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(1.0), t.cast<FloatType>());
+    }
+    cop->setUID(typeStr);
+
+    return cop;
 }
 
 std::vector<Operation*> mutate::traverseNestedOp(Operation* startop, 
@@ -147,22 +181,24 @@ bool mutate::replaceUnfulfillOperands(Operation *op) {
             randValueBeforeOp(f, op, oprd.get());
         
         if (metaV.first == nullptr) {
-            llvm::errs() << "Operation failed. Cannot find an proper value for " << fromUID;
+            llvm::errs() << "Operation failed. Cannot find an proper value for " << fromUID <<
+            "<" << oprd.get().getType() << ">\n";
             return false;
         }
 
+        Operation *toOp = metaV.first;
         if (metaV.second[0] == 'A') {
             int blkArgIdx = std::stoi(llvm::StringRef(metaV.second).drop_front().str());
-            Operation *toOp = metaV.first;
             oprd.set(toOp->getRegion(0).front().getArgument(blkArgIdx));
-            toUID = toOp->getUID() + "_" + metaV.second;
+        }
+        else if (metaV.second[0] == 'C') {
+            oprd.set(toOp->getResult(0));
         }
         else {
             int resultIdx = std::stoi(metaV.second);
-            Operation *toOp = metaV.first;
             oprd.set(toOp->getResult(resultIdx));
-            toUID = toOp->getUID() + "_" + metaV.second;
         }
+        toUID = toOp->getUID() + "_" + metaV.second;
         
         llvm::errs()<<"opreplaced "<< fromUID << "," << toUID << "\n";
     }
