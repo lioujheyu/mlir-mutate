@@ -159,17 +159,26 @@ std::vector<Operation*> mutate::traverseNestedOp(Operation* startop,
     return ops;
 }
 
-void mutate::updateUID(Operation* op, std::string mode) {
-    unsigned cnt = 0;
-    std::string targetUID = op->getUID() + "." + mode;
+void mutate::updateUID(Operation* srcOp, Operation* dstOp, std::string mode) {
+    
+    std::vector<Operation*> srcNest, dstNest;
+    srcNest = traverseNestedOp(srcOp, true, false);
+    dstNest = traverseNestedOp(dstOp, true, false);
+    assert(srcNest.size() == dstNest.size());
 
-    ModuleOp m = op->getParentOfType<ModuleOp>();
-    for (Operation *_op: traverseNestedOp(m)) {
-        if (_op->getUID().find(targetUID) != std::string::npos)
-            cnt++;
+    std::vector<unsigned> cntVec(srcNest.size());
+    ModuleOp m = srcOp->getParentOfType<ModuleOp>();
+
+    for (unsigned i=0; i<srcNest.size(); i++) {
+        std::string targetUID = srcNest[i]->getUID() + "." + mode;
+
+        unsigned cnt = 0;
+        for (Operation *_op: traverseNestedOp(m)) {
+            if (_op->getUID().find(targetUID) != std::string::npos)
+                cnt++;
+        }
+        dstNest[i]->setUID(targetUID + std::to_string(cnt+1));
     }
-
-    op->setUID(targetUID + std::to_string(cnt+1));
 }
 
 bool mutate::replaceUnfulfillOperands(Operation *op) {
@@ -248,36 +257,73 @@ void mutate::useResult(Operation *op) {
 }
 
 Operation* mutate::walkExact(std::string opDesc, std::string &UID, ModuleOp &m) {
+    unsigned count = 0;
     for (auto *op : traverseNestedOp(m)) {
-        if (opDesc == op->getUID())
-            return op;
+        count += 1;
+        if (opDesc[0] == 'U') {
+            if (opDesc == op->getUID()) {
+                UID = opDesc;
+                return op;
+            }
+        }
+        else {
+            if (count == std::stoul(opDesc)) {
+                UID = op->getUID();
+                if (UID.empty())
+                    return nullptr;
+                return op;
+            }
+        }
     }
     return nullptr;
 }
 
-Operation* mutate::walkCollect(std::string opDesc, std::string &UID, ModuleOp &m)
-{
+Operation* mutate::walkCollect(std::string opDesc, std::string &UID, ModuleOp &m) {
+    unsigned count = 0;
     for (auto *op : traverseNestedOp(m)) {
-        llvm::StringRef ID = op->getUID();
-        if (ID.find(".d") != StringRef::npos) continue; // Cannot be a deleted operation
+        count += 1;
+        if (opDesc[0] == 'U') {
+            llvm::StringRef ID = op->getUID();
+            if (ID.find(".d") != StringRef::npos) continue; // Cannot be a deleted operation
 
-        llvm::StringRef IDBase = ID.split('.').first;
-        llvm::StringRef targetBase = llvm::StringRef(opDesc).split('.').first;
-        if (IDBase.equals(targetBase)) {
-            UID = opDesc;
-            return op;
+            llvm::StringRef IDBase = ID.split('.').first;
+            llvm::StringRef targetBase = llvm::StringRef(opDesc).split('.').first;
+            if (IDBase.equals(targetBase)) {
+                UID = opDesc;
+                return op;
+            }
+        }
+        else {
+            if (count == std::stoul(opDesc)) {
+                UID = op->getUID();
+                if (UID.empty())
+                    return nullptr;
+                return op;
+            }
         }
     }
     return nullptr;
 }
 
 Operation* mutate::walkPosition(std::string opDesc, std::string &UID, ModuleOp &m) {
+    unsigned count = 0;
     for (auto *op : traverseNestedOp(m)) {
-        std::string ID = op->getUID();
-        if ((ID.compare(opDesc) == 0) ||
-            (ID.compare(opDesc + ".d") == 0)  ) {
-            UID = opDesc;
-            return op;
+        count += 1;
+        if (opDesc[0] == 'U') {
+            std::string ID = op->getUID();
+            if ((ID.compare(opDesc) == 0) ||
+                (ID.compare(opDesc + ".d") == 0)  ) {
+                UID = opDesc;
+                return op;
+            }
+        }
+        else {
+            if (count == std::stoul(opDesc)) {
+                UID = op->getUID();
+                if (UID.empty())
+                    return nullptr;
+                return op;
+            }
         }
     }
     return nullptr;
@@ -290,6 +336,46 @@ Operation* mutate::insertNOP(Operation *refOp) {
     auto nop = builder.create<mlir::ConstantIntOp>(builder.getUnknownLoc(), 0, 32);
     nop.getOperation()->setUID(refOp->getUID() + ".d");
     return nop.getOperation();
+}
+
+void mutate::OperandReplace::runOnOperation() {
+    std::string dummy;
+    ModuleOp module = getOperation();
+    // decompose destination description into inst and operand
+    StringRef dstOpDesc = (StringRef(dstDesc)).rsplit('_').first;
+    StringRef dstOperandDesc = (StringRef(dstDesc)).rsplit('_').second;
+    assert(dstOperandDesc.find("OP") != StringRef::npos && "Not a valid operand description!");
+    unsigned operandIdx = std::stoul(dstOperandDesc.drop_front(2).str());// remove "OP"
+    Operation *dstOp = walkExact(dstOpDesc.str(), dummy, module);
+    // if (dstOp == NULL)
+    //     return -1;
+    // if (operandIdx >= dstOp->getNumOperands())
+    //     return -2;
+    OpOperand &dstOperand = dstOp->getOpOperand(operandIdx);
+
+    StringRef srcOpDesc = (StringRef(srcDesc)).rsplit('_').first;
+    StringRef srcResultDesc = (StringRef(srcDesc)).rsplit('_').second;
+    Operation *srcOp = walkExact(srcOpDesc.str(), dummy, module);
+
+    // if (dstOp->hasTrait<OpTrait::SameOperandsAndResultType>()) {
+    //     llvm::errs() << "1";
+    // }
+
+    if (dstOperand.get().getType().isa<TensorType>()) {
+        llvm::errs() << "1";
+    }
+
+    if (srcResultDesc[0] == 'A') {
+        int blkArgIdx = std::stoul(srcResultDesc.drop_front().str());
+        dstOperand.set(srcOp->getRegion(0).front().getArgument(blkArgIdx));
+    }
+    else {
+        unsigned srcResultIdx = std::stoul(srcResultDesc.str());
+        dstOperand.set(srcOp->getResult(srcResultIdx));
+    }
+    // TODO: constant
+    
+    llvm::errs()<<"opreplaced "<< dstDesc << "," << srcDesc << "\n";
 }
 
 void mutate::Cut::runOnOperation() {
@@ -324,15 +410,15 @@ void mutate::Cut::runOnOperation() {
     }
     insertNOP(op);
     op->erase();
-    llvm::errs() << "cut " << op1 << "\n";
+    llvm::errs() << "cut " << rUID << "\n";
 }
 
 void mutate::Insert::runOnOperation() {
     // Get the current operation being operated on.
     ModuleOp module = getOperation();
-    std::string rUID;
-    Operation *srcOp = walkCollect(srcDesc, rUID, module);
-    Operation *dstOp = walkPosition(dstDesc, rUID, module);
+    std::string srcUID, dstUID;
+    Operation *srcOp = walkCollect(srcDesc, srcUID, module);
+    Operation *dstOp = walkPosition(dstDesc, dstUID, module);
     if (srcOp == nullptr or dstOp == nullptr) {
         llvm::errs()<<"insertion failed. Cannot find/use ";
         if (srcOp == nullptr) llvm::errs() << srcDesc << " ";
@@ -345,7 +431,7 @@ void mutate::Insert::runOnOperation() {
     OpBuilder builder(dstOp);
     Operation *inserted = builder.clone(*srcOp);
     inserted->setUID(srcOp->getUID());
-    updateUID(inserted, "i");
+    updateUID(srcOp, inserted, "i");
     if (!replaceUnfulfillOperands(inserted)) {
         signalPassFailure();
         return;
@@ -360,10 +446,10 @@ void mutate::Insert::runOnOperation() {
                           StringAttr::get(StringRef(newAttrStr), inserted->getContext()) );
     }
 
-    if (!(srcOp->use_empty()))
+    if (!(srcOp->use_empty()) && !noResult)
         mutate::useResult(inserted);
 
-    llvm::errs()<<"inserted " << dstDesc << "," << srcDesc << "\n";
+    llvm::errs()<<"inserted " << dstUID << "," << srcUID << "\n";
 }
 
 void mutate::Name::runOnOperation() {
@@ -375,4 +461,13 @@ void mutate::Name::runOnOperation() {
         cnt++;
         op->setUID(uid);
     }
+}
+
+void mutate::List::runOnOperation() {
+    ModuleOp m = getOperation();
+    int cnt = 0;
+    for (auto *op: traverseNestedOp(m)) {
+        cnt++;
+    }
+    llvm::errs() << cnt << "\n";
 }

@@ -1,0 +1,23 @@
+set(LLVM_TARGET_DEFINITIONS hlo_ops.td)
+mlir_tablegen(hlo_ops.h.inc -gen-op-decls)
+mlir_tablegen(hlo_ops.cc.inc -gen-op-defs)
+mlir_tablegen(hlo_ops_structs.h.inc -gen-struct-attr-decls)
+mlir_tablegen(hlo_ops_structs.cc.inc -gen-struct-attr-defs)
+add_public_tablegen_target(MLIRhlo_opsIncGen)
+
+set(LLVM_TARGET_DEFINITIONS hlo_ops_base.td)
+mlir_tablegen(hlo_ops_base.h.inc -gen-op-decls)
+mlir_tablegen(hlo_ops_base.cc.inc -gen-op-defs)
+add_public_tablegen_target(MLIRhlo_ops_baseIncGen)
+
+set(LLVM_TARGET_DEFINITIONS lhlo_ops.td)
+mlir_tablegen(lhlo_ops.h.inc -gen-op-decls)
+mlir_tablegen(lhlo_ops.cc.inc -gen-op-defs)
+mlir_tablegen(lhlo_ops_structs.h.inc -gen-struct-attr-decls)
+mlir_tablegen(lhlo_ops_structs.cc.inc -gen-struct-attr-defs)
+add_public_tablegen_target(MLIRlhlo_opsIncGen)
+
+set(LLVM_TARGET_DEFINITIONS infer_fusibility_op_interface.td)
+mlir_tablegen(infer_fusibility_op_interface.h.inc -gen-op-interface-decls)
+mlir_tablegen(infer_fusibility_op_interface.cpp.inc -gen-op-interface-defs)
+add_public_tablegen_target(MLIRinfer_fusibility_op_interfaceIncGen)

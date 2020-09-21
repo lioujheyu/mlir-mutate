@@ -17,6 +17,9 @@
 #include "mlir/Pass/Pass.h"
 
 #include "tfrt/basic_kernel/basic_kernels.h"
+#include "iree/compiler/Dialect/Flow/IR/FlowDialect.h"
+#include "iree/compiler/Dialect/IREE/IR/IREEDialect.h"
+#include "mlir-hlo/Dialect/mhlo/IR/hlo_ops.h"
 
 using namespace mlir;
 
@@ -29,7 +32,7 @@ Operation* getLocalConstantOp(Operation *op, Value refV);
 std::vector<mlir::Operation*> traverseNestedOp(mlir::Operation* startop, 
                                                bool insertStartOp=false,
                                                bool excludeIsolatedFromAbove=false);
-void updateUID(Operation* op, std::string mode);
+void updateUID(Operation* srcOp, Operation* dstOp, std::string mode);
 bool replaceUnfulfillOperands(Operation *op);
 void useResult(Operation *op);
 
@@ -45,7 +48,21 @@ Operation* insertNOP(Operation *refOp);
 class Insert : public PassWrapper<Insert, OperationPass<ModuleOp>> {
 public:
   Insert() {}
-  Insert(std::string dst, std::string src) : dstDesc(dst), srcDesc(src){}
+  Insert(std::string dst, std::string src, bool noResult) : 
+    dstDesc(dst), srcDesc(src), noResult(noResult){}
+  void runOnOperation() override;
+  
+private:
+  std::string srcDesc;
+  std::string dstDesc;
+  bool noResult;
+};
+
+class OperandReplace : public PassWrapper<OperandReplace, OperationPass<ModuleOp>> {
+public:
+  OperandReplace() {}
+  OperandReplace(std::string dst, std::string src) : 
+    dstDesc(dst), srcDesc(src){}
   void runOnOperation() override;
   
 private:
@@ -64,6 +81,9 @@ private:
 };
 
 class Name : public PassWrapper<Name, OperationPass<ModuleOp>> {
+  void runOnOperation() override;
+};
+class List : public PassWrapper<List, OperationPass<ModuleOp>> {
   void runOnOperation() override;
 };
 }
