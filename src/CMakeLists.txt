@@ -18,7 +18,7 @@ set(LIBS
     MLIRTargetLLVMIR
     MLIRTransforms
 )
-add_llvm_executable(mlir-mutate main.cpp mutate.cpp)
+add_llvm_executable(mlir-mutate main.cpp mutate.cpp tensor_reshape.cpp)
 
 llvm_update_compile_flags(mlir-mutate)
 target_link_libraries(mlir-mutate PRIVATE ${LIBS})

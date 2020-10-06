@@ -36,6 +36,8 @@ void updateUID(Operation* srcOp, Operation* dstOp, std::string mode);
 bool replaceUnfulfillOperands(Operation *op);
 void useResult(Operation *op);
 
+Value& TensorReshape(Value& from, const Value& to, std::string fromDesc);
+
 Operation* walkCollect(std::string opDesc, std::string &UID, ModuleOp &m);
 Operation* walkExact(std::string opDesc, std::string &UID, ModuleOp &m);
 Operation* walkPosition(std::string opDesc, std::string &UID, ModuleOp &m);

@@ -11,8 +11,14 @@ void mutate::collectValueBeforeOp(FuncOp &f, Operation* boundary, Value refV,
     if (upbound->getNumRegions() > 0) {
         for (auto &a: upbound->getRegion(0).front().getArguments()) {
             if (refV != nullptr) {
-                if (a.getType() != refV.getType())
-                    continue;
+                if (a.getType() != refV.getType()) {
+                    if (!a.getType().isa<RankedTensorType>() || 
+                        !refV.getType().isa<RankedTensorType>())
+                        continue;
+                    if (!a.getType().cast<RankedTensorType>().hasStaticShape() ||
+                        !refV.getType().cast<RankedTensorType>().hasStaticShape())
+                        continue;
+                }
             }
             std::string tmp = "A" + std::to_string(a.getArgNumber());
             resultVec.push_back(std::make_pair(upbound, tmp));
@@ -21,6 +27,8 @@ void mutate::collectValueBeforeOp(FuncOp &f, Operation* boundary, Value refV,
 
     DominanceInfo dom = DominanceInfo(upbound);
     for (Operation *op : traverseNestedOp(upbound)) {
+        if (op->getUID()[0] == 'R')
+            continue;
         if (boundary != nullptr) {
             if (op == boundary)
                 return;
@@ -36,16 +44,15 @@ void mutate::collectValueBeforeOp(FuncOp &f, Operation* boundary, Value refV,
 
             if (v == refV)
                 continue;
-            // if (v.getType()->isVoidTy())
-            //     continue;
             if (refV != nullptr) {
-                if (v.getType() != refV.getType())
-                    continue;
-                // if (T->isPointerTy()) {
-                //     if (I.getType()->getPointerElementType() !=
-                //         T->getPointerElementType())
-                //         continue;
-                // }
+                if (v.getType() != refV.getType()) {
+                    if (!v.getType().isa<RankedTensorType>() || 
+                        !refV.getType().isa<RankedTensorType>())
+                        continue;
+                    if (!v.getType().cast<RankedTensorType>().hasStaticShape() ||
+                        !refV.getType().cast<RankedTensorType>().hasStaticShape())
+                        continue;
+                }
             }
             std::string UID = std::to_string(v.getResultNumber());
             resultVec.push_back(std::make_pair(op, UID));
@@ -78,18 +85,21 @@ bool mutate::replaceAllUsesWithReport(Value from, std::pair<Operation*, std::str
         Operation *useOp = use->getOwner();
         std::string FromUID = useOp->getUID() + "_OP" + std::to_string(use->getOperandNumber());
         std::string toUID;
+        
+        Value srcVal; 
+        Operation *toOp = metaTo.first;
         if (metaTo.second[0] == 'A') {
             int blkArgIdx = std::stoi(llvm::StringRef(metaTo.second).drop_front().str());
-            Operation *toOp = metaTo.first;
-            use->set(toOp->getRegion(0).front().getArgument(blkArgIdx));
-            toUID = toOp->getUID() + "_" + metaTo.second;
+            srcVal = toOp->getRegion(0).front().getArgument(blkArgIdx);
         }
         else {
             int resultIdx = std::stoi(metaTo.second);
-            Operation *toOp = metaTo.first;
-            use->set(toOp->getResult(resultIdx));
-            toUID = toOp->getUID() + "_" + metaTo.second;
+            srcVal = toOp->getResult(resultIdx);
         }
+        toUID = toOp->getUID() + "_" + metaTo.second;
+        if (srcVal.getType().isa<RankedTensorType>())
+            srcVal = mutate::TensorReshape(srcVal, use->get(), toOp->getUID());
+        use->set(srcVal);
 
         if (failed(verify(useOp->getParentOfType<FuncOp>()))) {
             llvm::errs() << "mlir-mutate(failed): replacing " << FromUID << " with " << toUID << "\n";
@@ -196,18 +206,21 @@ bool mutate::replaceUnfulfillOperands(Operation *op) {
         }
 
         Operation *toOp = metaV.first;
+        Value srcVal;
         if (metaV.second[0] == 'A') {
             int blkArgIdx = std::stoi(llvm::StringRef(metaV.second).drop_front().str());
-            oprd.set(toOp->getRegion(0).front().getArgument(blkArgIdx));
+            srcVal = toOp->getRegion(0).front().getArgument(blkArgIdx);
         }
-        else if (metaV.second[0] == 'C') {
-            oprd.set(toOp->getResult(0));
-        }
+        else if (metaV.second[0] == 'C')
+            srcVal = toOp->getResult(0);
         else {
             int resultIdx = std::stoi(metaV.second);
-            oprd.set(toOp->getResult(resultIdx));
+            srcVal = toOp->getResult(resultIdx);
         }
         toUID = toOp->getUID() + "_" + metaV.second;
+        if (srcVal.getType().isa<RankedTensorType>())
+            srcVal = mutate::TensorReshape(srcVal, oprd.get(), toOp->getUID());
+        oprd.set(srcVal);
         
         llvm::errs()<<"opreplaced "<< fromUID << "," << toUID << "\n";
     }
@@ -223,6 +236,8 @@ void mutate::useResult(Operation *op) {
      * We don't want operations that are isolated from current op
      **/
     for (Operation *_op : traverseNestedOp(f, false, true)) {
+        if (_op->getUID()[0] == 'R') // Do not use operations created for reshaping the tensor during repairing
+            continue;
         if (_op->getUID().find("nop") != std::string::npos)
             continue;
         if (dom.properlyDominates(op, _op) == false)
@@ -259,8 +274,10 @@ void mutate::useResult(Operation *op) {
 Operation* mutate::walkExact(std::string opDesc, std::string &UID, ModuleOp &m) {
     unsigned count = 0;
     for (auto *op : traverseNestedOp(m)) {
+        if (op->getUID().empty())
+            continue;
         count += 1;
-        if (opDesc[0] == 'U') {
+        if (opDesc[0] == 'U' || opDesc[0] == 'R') {
             if (opDesc == op->getUID()) {
                 UID = opDesc;
                 return op;
@@ -269,8 +286,14 @@ Operation* mutate::walkExact(std::string opDesc, std::string &UID, ModuleOp &m) 
         else {
             if (count == std::stoul(opDesc)) {
                 UID = op->getUID();
-                if (UID.empty())
-                    return nullptr;
+                if (op->getUID()[0] != 'U') {
+                    count--;
+                    continue;
+                }
+                if (op->isKnownTerminator()) {
+                    count--;
+                    continue;
+                }
                 return op;
             }
         }
@@ -281,6 +304,8 @@ Operation* mutate::walkExact(std::string opDesc, std::string &UID, ModuleOp &m) 
 Operation* mutate::walkCollect(std::string opDesc, std::string &UID, ModuleOp &m) {
     unsigned count = 0;
     for (auto *op : traverseNestedOp(m)) {
+        if (op->getUID().empty())
+            continue;
         count += 1;
         if (opDesc[0] == 'U') {
             llvm::StringRef ID = op->getUID();
@@ -295,9 +320,15 @@ Operation* mutate::walkCollect(std::string opDesc, std::string &UID, ModuleOp &m
         }
         else {
             if (count == std::stoul(opDesc)) {
+                if (op->getUID()[0] != 'U') {
+                    count--;
+                    continue;
+                }
+                if (op->isKnownTerminator()) {
+                    count--;
+                    continue;
+                }
                 UID = op->getUID();
-                if (UID.empty())
-                    return nullptr;
                 return op;
             }
         }
@@ -308,6 +339,8 @@ Operation* mutate::walkCollect(std::string opDesc, std::string &UID, ModuleOp &m
 Operation* mutate::walkPosition(std::string opDesc, std::string &UID, ModuleOp &m) {
     unsigned count = 0;
     for (auto *op : traverseNestedOp(m)) {
+        if (op->getUID().empty())
+            continue;
         count += 1;
         if (opDesc[0] == 'U') {
             std::string ID = op->getUID();
@@ -319,9 +352,17 @@ Operation* mutate::walkPosition(std::string opDesc, std::string &UID, ModuleOp &
         }
         else {
             if (count == std::stoul(opDesc)) {
+                if (op->getUID()[0] != 'U') {
+                    count--;
+                    continue;
+                }
+                if (op->isKnownTerminator()) {
+                    count--;
+                    continue;
+                }
                 UID = op->getUID();
-                if (UID.empty())
-                    return nullptr;
+                // if (UID.empty())
+                //     return nullptr;
                 return op;
             }
         }
@@ -357,22 +398,20 @@ void mutate::OperandReplace::runOnOperation() {
     StringRef srcResultDesc = (StringRef(srcDesc)).rsplit('_').second;
     Operation *srcOp = walkExact(srcOpDesc.str(), dummy, module);
 
-    // if (dstOp->hasTrait<OpTrait::SameOperandsAndResultType>()) {
-    //     llvm::errs() << "1";
-    // }
-
-    if (dstOperand.get().getType().isa<TensorType>()) {
-        llvm::errs() << "1";
-    }
-
+    Value srcVal;
     if (srcResultDesc[0] == 'A') {
         int blkArgIdx = std::stoul(srcResultDesc.drop_front().str());
-        dstOperand.set(srcOp->getRegion(0).front().getArgument(blkArgIdx));
+        srcVal = srcOp->getRegion(0).front().getArgument(blkArgIdx);
     }
     else {
         unsigned srcResultIdx = std::stoul(srcResultDesc.str());
-        dstOperand.set(srcOp->getResult(srcResultIdx));
+        srcVal = srcOp->getResult(srcResultIdx);
     }
+
+    if (dstOperand.get().getType().isa<RankedTensorType>())
+        srcVal = mutate::TensorReshape(srcVal, dstOperand.get(), srcOpDesc.str());
+
+    dstOperand.set(srcVal);
     // TODO: constant
     
     llvm::errs()<<"opreplaced "<< dstDesc << "," << srcDesc << "\n";
@@ -397,7 +436,7 @@ void mutate::Cut::runOnOperation() {
             
             if(metaV.first == nullptr) {
                 llvm::errs() << "cut failed. Cannot find result replacement for " <<
-                    op1+"_"+std::to_string(v.getResultNumber()) << "\n";
+                    rUID+"_"+std::to_string(v.getResultNumber()) << "\n";
                 signalPassFailure();
                 return;
             }
@@ -437,7 +476,7 @@ void mutate::Insert::runOnOperation() {
         return;
     }
 
-    // Rename the symbol name if it exist
+    // Rename the symbol name if it exist. Primarily for function operations
     // TODO: implement a better renaming scheme
     auto nameAttr = inserted->getAttrOfType<StringAttr>(mlir::SymbolTable::getSymbolAttrName());
     if (nameAttr != nullptr) {
@@ -467,6 +506,14 @@ void mutate::List::runOnOperation() {
     ModuleOp m = getOperation();
     int cnt = 0;
     for (auto *op: traverseNestedOp(m)) {
+        if (op->getUID().empty())
+            continue;
+        if (op->getUID()[0] != 'U') // skip tensor reshape operation
+            continue;
+        if (op->getUID().find("nop") != std::string::npos) // skip the remain of a deleted operation
+            continue;
+        if (op->isKnownTerminator())
+            continue;
         cnt++;
     }
     llvm::errs() << cnt << "\n";
