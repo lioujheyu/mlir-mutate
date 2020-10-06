@@ -101,14 +101,17 @@ int main(int argc, char **argv) {
     argc, argv,
     "MLIR mutate operations\n"
   );
-  // mlir::DialectRegistration<tfrt::hex::HexDialect>();
-  mlir::DialectRegistration<iree_compiler::IREE::Flow::FlowDialect>();
-  mlir::DialectRegistration<iree_compiler::IREEDialect>();
-  mlir::DialectRegistration<mhlo::MhloDialect>();
+
   mlir::registerAllDialects();
+  mlir::DialectRegistry registry;
+  mlir::registerAllDialects(registry);
+  
 
   mlir::MLIRContext context;
-  context.allowUnregisteredDialects();
+  context.getOrLoadDialect<iree_compiler::IREE::Flow::FlowDialect>();
+  context.getOrLoadDialect<iree_compiler::IREEDialect>();
+  context.getOrLoadDialect<mhlo::MhloDialect>();
+  context.getOrLoadDialect<mlir::StandardOpsDialect>();
   mlir::OwningModuleRef module;
   mlir::PassManager pm(&context, true);
 

@@ -26,7 +26,7 @@ add_mlir_dialect_library(hlo
         LLVMSupport
         MLIRIR
         MLIRSideEffectInterfaces
-        MLIRStandardOps
+        MLIRStandard
         MLIRSupport
         MLIRTransformUtils
 

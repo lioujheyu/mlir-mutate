@@ -18,34 +18,9 @@ add_mlir_dialect_library(IREEIR
     MLIRIR
     MLIRParser
     MLIRSideEffectInterfaces
-    MLIRStandardOps
+    MLIRStandard
     MLIRSupport
 
     LINK_LIBS PUBLIC
     MLIRIR
 )
-
-# iree_cc_library(
-#   NAME
-#     IR
-#   HDRS
-#     "IREEAttributes.h"
-#     "IREEDialect.h"
-#     "IREEOps.h"
-#     "IREEOps.h.inc"
-#     "IREETraits.h"
-#     "IREETypes.h"
-#   SRCS
-#     "IREEDialect.cpp"
-#     "IREEOps.cpp"
-#     "IREEOps.cpp.inc"
-#     "IREETypes.cpp"
-#   DEPS
-#     LLVMSupport
-#     MLIRIR
-#     MLIRParser
-#     MLIRSideEffectInterfaces
-#     MLIRStandardOps
-#     MLIRSupport
-#   PUBLIC
-# )

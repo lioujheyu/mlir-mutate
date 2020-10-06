@@ -34,7 +34,7 @@ add_mlir_dialect_library(FlowIR
     LLVMSupport
     MLIRIR
     MLIRSideEffectInterfaces
-    MLIRStandardOps
+    MLIRStandard
     MLIRSupport
     MLIRTransformUtils
 
@@ -42,34 +42,3 @@ add_mlir_dialect_library(FlowIR
     MLIRIR
     IREEIR
 	)
-
-# iree_cc_library(
-#   NAME
-#     IR
-#   HDRS
-#     "FlowDialect.h"
-#     "FlowEnums.h.inc"
-#     "FlowOpInterface.h.inc"
-#     "FlowOpUtils.h"
-#     "FlowOps.h"
-#     "FlowOps.h.inc"
-#     "FlowTypes.h"
-#   SRCS
-#     "FlowDialect.cpp"
-#     "FlowEnums.cpp.inc"
-#     "FlowOpFolders.cpp"
-#     "FlowOpInterface.cpp.inc"
-#     "FlowOpUtils.cpp"
-#     "FlowOps.cpp"
-#     "FlowOps.cpp.inc"
-#     "FlowTypes.cpp"
-#   DEPS
-#     LLVMSupport
-#     MLIRIR
-#     MLIRSideEffectInterfaces
-#     MLIRStandardOps
-#     MLIRSupport
-#     MLIRTransformUtils
-#     iree::compiler::Dialect::IREE::IR
-#   PUBLIC
-# )
