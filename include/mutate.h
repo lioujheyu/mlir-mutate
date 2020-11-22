@@ -55,8 +55,8 @@ public:
   void runOnOperation() override;
   
 private:
-  std::string srcDesc;
   std::string dstDesc;
+  std::string srcDesc;
   bool noResult;
 };
 
@@ -68,8 +68,8 @@ public:
   void runOnOperation() override;
   
 private:
-  std::string srcDesc;
   std::string dstDesc;
+  std::string srcDesc;
 };
 
 class Cut : public PassWrapper<Cut, OperationPass<ModuleOp>> {
