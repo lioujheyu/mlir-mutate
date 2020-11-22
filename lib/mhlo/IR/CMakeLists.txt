@@ -8,6 +8,7 @@ add_public_tablegen_target(MLIRmhlo_canonicalizeIncGen)
 
 add_mlir_dialect_library(hlo
         hlo_ops.cc
+        hlo_ops_base_structs.cc
         hlo_utils.cc
         convert_op_folder.cc
         # "hlo_ops.cc.inc"

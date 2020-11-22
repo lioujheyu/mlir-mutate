@@ -102,7 +102,7 @@ int main(int argc, char **argv) {
     "MLIR mutate operations\n"
   );
 
-  mlir::registerAllDialects();
+  // mlir::registerAllDialects();
   mlir::DialectRegistry registry;
   mlir::registerAllDialects(registry);
   
@@ -113,7 +113,7 @@ int main(int argc, char **argv) {
   context.getOrLoadDialect<mhlo::MhloDialect>();
   context.getOrLoadDialect<mlir::StandardOpsDialect>();
   mlir::OwningModuleRef module;
-  mlir::PassManager pm(&context, true);
+  mlir::PassManager pm(&context);
 
   if (!inputFilename.empty()) {
     // Handle '.mlir' input 
