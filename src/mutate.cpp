@@ -1,6 +1,7 @@
 #include "mutate.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/Verifier.h"
+#include "mlir/IR/TypeRange.h"
 
 std::random_device rd;
 std::mt19937 gen(rd());
@@ -17,6 +18,9 @@ void mutate::collectValueBeforeOp(FuncOp &f, Operation* boundary, Value refV,
                         continue;
                     if (!a.getType().cast<RankedTensorType>().hasStaticShape() ||
                         !refV.getType().cast<RankedTensorType>().hasStaticShape())
+                        continue;
+                    if (a.getType().cast<RankedTensorType>().getElementType() != 
+                        refV.getType().cast<RankedTensorType>().getElementType())
                         continue;
                 }
             }
@@ -51,6 +55,9 @@ void mutate::collectValueBeforeOp(FuncOp &f, Operation* boundary, Value refV,
                         continue;
                     if (!v.getType().cast<RankedTensorType>().hasStaticShape() ||
                         !refV.getType().cast<RankedTensorType>().hasStaticShape())
+                        continue;
+                    if (v.getType().cast<RankedTensorType>().getElementType() != 
+                        refV.getType().cast<RankedTensorType>().getElementType())
                         continue;
                 }
             }
@@ -154,7 +161,7 @@ std::vector<Operation*> mutate::traverseNestedOp(Operation* startop,
     if (startop->getNumRegions() == 0)
         return ops;
 
-    for (int i=0; i<startop->getNumRegions(); ++i){
+    for (unsigned i=0; i<startop->getNumRegions(); ++i){
         for (auto &op: startop->getRegion(i).getOps()) {
             ops.push_back(&op);
             if (excludeIsolatedFromAbove && op.isKnownIsolatedFromAbove())
@@ -493,9 +500,58 @@ void mutate::Insert::runOnOperation() {
 
 void mutate::Name::runOnOperation() {
     ModuleOp m = getOperation();
+    OpBuilder builder(m.getContext());
     int cnt = 0;
     std::string uid;
     for (auto *op: traverseNestedOp(m)) {
+        // Force replacing all 64-bit interger type with 32-bit integer type
+        // #TODO: Focing 32-bit integer should be done from upstream TensorFlow
+        // #TODO: Check rewriter function for replacement
+        // replace result type by creating a new operation with desired result type
+        bool changeResultType = false;
+        SmallVector<Type, 8> desiredResultTypes;
+        for (auto resultType: op->getResultTypes()) {
+            RankedTensorType resultTensorType = resultType.dyn_cast_or_null<RankedTensorType>();
+            if (resultTensorType == NULL) {
+                desiredResultTypes.push_back(resultType);
+                continue;
+            }
+            if (resultTensorType.getElementType().isInteger(64)) {
+                changeResultType = true;
+                desiredResultTypes.push_back(RankedTensorType::get(resultTensorType.getShape(),
+                                                                   builder.getIntegerType(32)));
+            }
+            else
+                desiredResultTypes.push_back(resultType);
+        }
+        if (changeResultType) {
+            if (op->getName().getStringRef().equals("mhlo.constant")) {
+                auto value = op->getAttr("value").cast<DenseElementsAttr>();
+                auto attrType = value.getType().cast<ShapedType>();
+                if (attrType.getElementType().isInteger(64)) {
+                    op->setAttr("value",
+                                value.mapValues(builder.getIntegerType(32), 
+                                                [&](const APInt &v) { return v.trunc(32); }));
+                }
+            }
+            if (op->getName().getStringRef().equals("flow.variable")) {
+                auto value = op->getAttr("value");
+            }
+
+            builder.setInsertionPoint(op);
+
+            // #TODO: Check the usage of Region which is being ignored here
+            OperationState state(op->getLoc(), op->getName().getStringRef(), op->getOperands(), 
+                                 desiredResultTypes, op->getAttrs(),
+                                 op->getSuccessors());
+            auto *newOp = builder.createOperation(state);
+
+            op->replaceAllUsesWith(newOp);
+            op->erase();
+            op = newOp;
+        }
+
+        // Update UID
         uid = "U" + std::to_string(cnt);
         cnt++;
         op->setUID(uid);
