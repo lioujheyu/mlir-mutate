@@ -140,18 +140,18 @@ Value& mutate::TensorReshape(Value& from, const Value& to, std::string fromDesc)
             std::string typeStr;
             unsigned width = toElementType.getIntOrFloatBitWidth();
             if (toElementType.isInteger(width)) {
-                typeStr = "C0i" + std::to_string(width);
+                typeStr = "C1i" + std::to_string(width);
                 constop = builder.create<mhlo::ConstOp>(
                     builder.getUnknownLoc(), 
                     DenseElementsAttr::get(RankedTensorType::get({}, toElementType.cast<IntegerType>()),
-                                           IntegerAttr::get(toElementType.cast<IntegerType>(), 0)));
+                                           IntegerAttr::get(toElementType.cast<IntegerType>(), 1)));
             }
             else {
-                typeStr = "C0f" + std::to_string(width);
+                typeStr = "C1f" + std::to_string(width);
                 constop = builder.create<mhlo::ConstOp>(
                     builder.getUnknownLoc(), 
                     DenseElementsAttr::get(RankedTensorType::get({}, toElementType.cast<FloatType>()),
-                                           FloatAttr::get(toElementType.cast<FloatType>(), 0.0)));
+                                           FloatAttr::get(toElementType.cast<FloatType>(), 1.0)));
             }
             constop->setUID(typeStr);
             builder.setInsertionPointAfter(constop);
